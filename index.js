@@ -5,6 +5,13 @@ const { MongoClient, ServerApiVersion } = require('mongodb');
 const app = express();
 const prot = process.env.PORT || 3000;
 
+const admin = require('firebase-admin');
+const serviceAccount = require('./deshi-deals-172bd-firebase-adminsdk.json');
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 //middleware
 app.use(cors());
 app.use(express.json());
@@ -17,6 +24,20 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+const verifyIDToken = async (req, res, next) => {
+  if (!req.headers.authorization) {
+    return res.status(401).send({ message: 'Unauthorize access' });
+  }
+  const token = req.headers.authorization.split(' ')[1];
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.verify_email = decoded.email;
+    next();
+  } catch (error) {
+    return res.status(401).send({ message: 'Unauthorize access' });
+  }
+};
 
 app.get('/', (req, res) => {
   res.send('Hello deshi dokan');
@@ -33,10 +54,21 @@ async function run() {
     const deshiDokanDB = client.db('deshiDokanDB');
     const productsCollection = deshiDokanDB.collection('products');
 
-    app.post('/products', async (req, res) => {
+    app.post('/products', verifyIDToken, async (req, res) => {
       const product = req.body;
       const result = await productsCollection.insertOne(product);
+      res.send(result);
+    });
 
+    app.get('/products', verifyIDToken, async (req, res) => {
+      const product = productsCollection.find();
+      const result = await product.toArray();
+      res.send(result);
+    });
+
+    app.get('/popular/products', async (req, res) => {
+      const product = productsCollection.find().limit(6);
+      const result = await product.toArray();
       res.send(result);
     });
 
